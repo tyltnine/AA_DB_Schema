@@ -1,0 +1,1747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Adams Apples v2 - Database Schema</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    
+    import React, { useState, useEffect } from 'react';
+import { Camera, Database, GitBranch, Package, Users, MapPin, 
+         TreePine, FileText, DollarSign, Clock, AlertCircle, 
+         TrendingUp, Layers, Grid, ArrowRight, Info, Printer,
+         ChevronDown, ChevronRight, Search, Filter, X } from 'lucide-react';
+
+const AdamsApplesSchemaVisualizer = () => {
+  const [selectedTable, setSelectedTable] = useState(null);
+  const [selectedFlow, setSelectedFlow] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterCategory, setFilterCategory] = useState('all');
+  const [viewMode, setViewMode] = useState('erd'); // 'erd', 'flow', 'detail'
+  const [expandedSections, setExpandedSections] = useState({});
+
+  // Database schema definition with full technical and business context
+  const schema = {
+    categories: [
+      {
+        id: 'core',
+        name: 'Core Business',
+        color: '#2563eb',
+        icon: Users,
+        description: 'Fundamental business entities and user management'
+      },
+      {
+        id: 'locations',
+        name: 'Locations & Trees',
+        color: '#16a34a',
+        icon: MapPin,
+        description: 'Physical locations, blocks, and tree tracking with PostGIS spatial data'
+      },
+      {
+        id: 'varieties',
+        name: 'Varieties',
+        color: '#9333ea',
+        icon: TreePine,
+        description: 'Fruit species, scion varieties, and rootstock management'
+      },
+      {
+        id: 'health',
+        name: 'Tree Health',
+        color: '#dc2626',
+        icon: AlertCircle,
+        description: 'Health monitoring, records, alerts, and tracking'
+      },
+      {
+        id: 'nursery',
+        name: 'Nursery Operations',
+        color: '#ea580c',
+        icon: Package,
+        description: 'Tree sales, orders, and propagation batches'
+      },
+      {
+        id: 'work',
+        name: 'Work Management',
+        color: '#0891b2',
+        icon: Clock,
+        description: 'Work orders, time tracking, and task management'
+      },
+      {
+        id: 'billing',
+        name: 'Billing & Payments',
+        color: '#65a30d',
+        icon: DollarSign,
+        description: 'Invoicing and payment processing'
+      },
+      {
+        id: 'inventory',
+        name: 'Inventory',
+        color: '#7c3aed',
+        icon: Grid,
+        description: 'Supplies, equipment, and inventory tracking'
+      },
+      {
+        id: 'support',
+        name: 'Supporting Systems',
+        color: '#64748b',
+        icon: Database,
+        description: 'Notifications, photos, audit logs, and system utilities'
+      }
+    ],
+
+    tables: [
+      // CORE BUSINESS
+      {
+        id: 'clients',
+        name: 'clients',
+        category: 'core',
+        businessName: 'Clients',
+        technicalDescription: 'Orchard owners who contract Adam for management services',
+        businessDescription: 'Companies or individuals who own orchards and hire Adam to manage their properties. Each client can have multiple orchards, access to the client portal, and customized payment terms.',
+        keyFields: [
+          { name: 'id', type: 'UUID', pk: true, description: 'Unique identifier' },
+          { name: 'name', type: 'VARCHAR(200)', required: true, description: 'Company/individual name' },
+          { name: 'email', type: 'CITEXT', description: 'Case-insensitive email address' },
+          { name: 'payment_terms', type: 'INTEGER', default: 30, description: 'Days until invoice payment is due' },
+          { name: 'client_portal_enabled', type: 'BOOLEAN', default: false, description: 'Can client access web portal?' },
+          { name: 'billing_address', type: 'TEXT', description: 'Billing address for invoices' },
+          { name: 'tax_id', type: 'VARCHAR(50)', description: 'Tax ID for invoicing' },
+          { name: 'is_active', type: 'BOOLEAN', default: true, description: 'Is client currently active?' }
+        ],
+        relationships: [
+          { type: 'one-to-many', target: 'users', description: 'Client portal users (CLIENT role)' },
+          { type: 'one-to-many', target: 'locations', description: 'Orchards and properties owned' },
+          { type: 'one-to-many', target: 'nursery_orders', description: 'Tree purchase orders' },
+          { type: 'one-to-many', target: 'work_orders', description: 'Work performed for client' },
+          { type: 'one-to-many', target: 'invoices', description: 'Invoices sent to client' }
+        ],
+        businessRules: [
+          'A client can have multiple locations',
+          'Payment terms default to 30 days but can be customized',
+          'Client portal access is optional and must be explicitly enabled',
+          'When a client is marked inactive, their data is preserved but they appear in filtered lists'
+        ],
+        indexes: ['name', 'is_active', 'client_portal_enabled']
+      },
+      {
+        id: 'users',
+        name: 'users',
+        category: 'core',
+        businessName: 'Users',
+        technicalDescription: 'System users including Adam\'s team and client portal users',
+        businessDescription: 'All people who can log into the system. Includes Adam\'s employees (admin, managers, workers) and client portal users who can view their orchards.',
+        keyFields: [
+          { name: 'id', type: 'UUID', pk: true, description: 'Unique identifier' },
+          { name: 'email', type: 'CITEXT', unique: true, required: true, description: 'Login email (case-insensitive)' },
+          { name: 'password_hash', type: 'VARCHAR(255)', required: true, description: 'BCrypt hashed password' },
+          { name: 'first_name', type: 'VARCHAR(100)', required: true, description: 'First name' },
+          { name: 'last_name', type: 'VARCHAR(100)', required: true, description: 'Last name' },
+          { name: 'role', type: 'user_role ENUM', required: true, description: 'ADMIN, MANAGER, WORKER, or CLIENT' },
+          { name: 'client_id', type: 'UUID', fk: 'clients', description: 'For CLIENT role: which client they belong to' },
+          { name: 'hourly_rate', type: 'NUMERIC(10,2)', description: 'What Adam pays them per hour (WORKER/MANAGER)' },
+          { name: 'billable_rate', type: 'NUMERIC(10,2)', description: 'What Adam charges clients for their time' },
+          { name: 'is_active', type: 'BOOLEAN', default: true, description: 'Can user log in?' }
+        ],
+        relationships: [
+          { type: 'many-to-one', target: 'clients', description: 'Client they belong to (for CLIENT role)' },
+          { type: 'one-to-many', target: 'work_orders', as: 'assigned_to', description: 'Work orders assigned to user' },
+          { type: 'one-to-many', target: 'time_entries', description: 'Time entries logged by user' }
+        ],
+        businessRules: [
+          'ADMIN: Full system access, can manage everything',
+          'MANAGER: Can create work orders, approve requests, generate invoices',
+          'WORKER: Can clock in/out, complete assigned work orders, no administrative access',
+          'CLIENT: View-only access to their own orchards via portal',
+          'Hourly vs Billable rate determines profit margin on labor',
+          'Each user must have a unique email address'
+        ],
+        indexes: ['email', 'role', 'client_id', 'is_active']
+      },
+
+      // LOCATIONS & TREES
+      {
+        id: 'locations',
+        name: 'locations',
+        category: 'locations',
+        businessName: 'Locations',
+        technicalDescription: 'Physical locations where work happens - orchards, nurseries, farms',
+        businessDescription: 'Real-world properties that contain trees. Could be a client\'s orchard, Adam\'s nursery, or any farm/property. Uses GPS coordinates and boundary polygons for mapping.',
+        keyFields: [
+          { name: 'id', type: 'UUID', pk: true, description: 'Unique identifier' },
+          { name: 'client_id', type: 'UUID', fk: 'clients', description: 'NULL = Adam\'s own property' },
+          { name: 'name', type: 'VARCHAR(200)', required: true, description: 'Location name (e.g., "South Orchard")' },
+          { name: 'location_type', type: 'location_type ENUM', required: true, description: 'ORCHARD, NURSERY, FARM, etc.' },
+          { name: 'centroid', type: 'geometry(Point,4326)', description: 'PostGIS: Center point for maps' },
+          { name: 'boundary', type: 'geometry(Polygon,4326)', description: 'PostGIS: Property boundary polygon' },
+          { name: 'acreage', type: 'NUMERIC(10,2)', description: 'Size of property in acres' },
+          { name: 'address', type: 'TEXT', description: 'Physical address' },
+          { name: 'planting_year', type: 'INTEGER', description: 'Year orchard was established' },
+          { name: 'is_active', type: 'BOOLEAN', default: true, description: 'Is location currently active?' }
+        ],
+        relationships: [
+          { type: 'many-to-one', target: 'clients', description: 'Owner of the property (NULL for Adam\'s own)' },
+          { type: 'one-to-many', target: 'orchard_blocks', description: 'Subdivisions within location' },
+          { type: 'one-to-many', target: 'trees', description: 'Trees at this location' },
+          { type: 'one-to-many', target: 'work_orders', description: 'Work performed at location' }
+        ],
+        businessRules: [
+          'When client_id is NULL, this is Adam\'s own property',
+          'PostGIS geometry fields enable spatial queries and map display',
+          'SRID 4326 = WGS84 (standard GPS coordinates)',
+          'Boundaries can be drawn on a map or imported from GPS devices',
+          'Each location can be subdivided into blocks for finer organization'
+        ],
+        indexes: ['client_id', 'location_type', 'is_active', 'centroid (GIST)', 'boundary (GIST)'],
+        postgis: true
+      },
+      {
+        id: 'orchard_blocks',
+        name: 'orchard_blocks',
+        category: 'locations',
+        businessName: 'Orchard Blocks',
+        technicalDescription: 'Subdivisions within a location (orchards have blocks, blocks have rows)',
+        businessDescription: 'A way to organize large orchards into manageable sections. For example, "South Orchard" might have "Northeast Block" and "Southwest Block". Each block has its own grid layout and planting details.',
+        keyFields: [
+          { name: 'id', type: 'UUID', pk: true, description: 'Unique identifier' },
+          { name: 'location_id', type: 'UUID', fk: 'locations', required: true, description: 'Parent location' },
+          { name: 'name', type: 'VARCHAR(100)', required: true, description: 'Block name (e.g., "Northeast Block")' },
+          { name: 'code', type: 'VARCHAR(20)', description: 'Short code (e.g., "NE")' },
+          { name: 'total_rows', type: 'INTEGER', description: 'Number of rows in block' },
+          { name: 'positions_per_row', type: 'INTEGER', description: 'Trees per row (if uniform)' },
+          { name: 'row_spacing_ft', type: 'NUMERIC(5,2)', description: 'Feet between rows' },
+          { name: 'tree_spacing_ft', type: 'NUMERIC(5,2)', description: 'Feet between trees in row' },
+          { name: 'primary_planted_year', type: 'INTEGER', description: 'Year most trees were planted' },
+          { name: 'boundary', type: 'geometry(Polygon,4326)', description: 'PostGIS: Block boundary' }
+        ],
+        relationships: [
+          { type: 'many-to-one', target: 'locations', description: 'Parent location' },
+          { type: 'many-to-one', target: 'fruit_species', description: 'Main fruit type in block' },
+          { type: 'one-to-many', target: 'trees', description: 'Trees in this block' }
+        ],
+        businessRules: [
+          'Blocks help organize large orchards into manageable sections',
+          'Grid info (rows, spacing) helps calculate capacity',
+          'Capacity = total_rows × positions_per_row',
+          'Blocks can have their own boundaries for precise mapping',
+          'Unique name per location (can\'t have two "Block A" in same orchard)'
+        ],
+        indexes: ['location_id', 'primary_species_id', 'boundary (GIST)'],
+        postgis: true
+      },
+      {
+        id: 'trees',
+        name: 'trees',
+        category: 'locations',
+        businessName: 'Trees',
+        technicalDescription: 'Unified tree entity tracking entire lifecycle from nursery to orchard',
+        businessDescription: 'Individual trees tracked from the moment they\'re grafted in the nursery until they\'re producing fruit in an orchard. Each tree has a unique number that never changes, even if it\'s moved or sold.',
+        keyFields: [
+          { name: 'id', type: 'UUID', pk: true, description: 'Unique identifier' },
+          { name: 'tree_number', type: 'VARCHAR(50)', unique: true, required: true, description: 'Format: A-HON-0001 (never reused)' },
+          { name: 'location_id', type: 'UUID', fk: 'locations', required: true, description: 'Current physical location' },
+          { name: 'orchard_block_id', type: 'UUID', fk: 'orchard_blocks', description: 'Optional block subdivision' },
+          { name: 'scion_variety_id', type: 'UUID', fk: 'varieties', description: 'Fruiting variety (nullable for historic trees)' },
+          { name: 'rootstock_variety_id', type: 'UUID', fk: 'varieties', description: 'Rootstock variety (nullable for historic trees)' },
+          { name: 'stage', type: 'tree_stage ENUM', required: true, description: 'NURSERY_FIELD → RESERVED → ORCHARD_PLANTED → ORCHARD_MATURE' },
+          { name: 'health_status', type: 'health_status ENUM', required: true, description: 'HEALTHY, ATTENTION, DISEASED, DEAD, REMOVED' },
+          { name: 'row', type: 'VARCHAR(50)', description: 'Row identifier' },
+          { name: 'position_in_row', type: 'INTEGER', description: 'Position within row' },
+          { name: 'coordinates', type: 'geometry(Point,4326)', description: 'PostGIS: Exact GPS location' },
+          { name: 'planting_date', type: 'DATE', description: 'When physically planted' },
+          { name: 'sold_to_client_id', type: 'UUID', fk: 'clients', description: 'Client who purchased tree' }
+        ],
+        relationships: [
+          { type: 'many-to-one', target: 'locations', description: 'Current location' },
+          { type: 'many-to-one', target: 'orchard_blocks', description: 'Block (optional)' },
+          { type: 'many-to-one', target: 'varieties', as: 'scion', description: 'Fruiting variety' },
+          { type: 'many-to-one', target: 'varieties', as: 'rootstock', description: 'Rootstock' },
+          { type: 'many-to-one', target: 'nursery_batches', description: 'Origin batch' },
+          { type: 'many-to-one', target: 'clients', as: 'sold_to', description: 'Buyer' },
+          { type: 'one-to-many', target: 'tree_health_records', description: 'Health observations' }
+        ],
+        businessRules: [
+          'Tree number format: {Species}-{Variety}-{Sequence} (e.g., A-HON-0001)',
+          'Tree numbers are never reused, even if tree dies',
+          'Stage tracks lifecycle: NURSERY → RESERVED → READY_TO_SHIP → ORCHARD_PLANTED → ORCHARD_MATURE',
+          'Health status determines map marker color (green/yellow/orange/red/gray)',
+          'PostGIS coordinates enable precise tree location on interactive maps',
+          'Historic trees may have null varieties if genetics are unknown'
+        ],
+        indexes: ['tree_number', 'location_id', 'stage', 'health_status', 'coordinates (GIST)', 'sold_to_client_id'],
+        postgis: true
+      },
+
+      // VARIETIES
+      {
+        id: 'fruit_species',
+        name: 'fruit_species',
+        category: 'varieties',
+        businessName: 'Fruit Species',
+        technicalDescription: 'Top-level fruit types with single-letter codes for tree numbering',
+        businessDescription: 'High-level categories like Apple, Pear, Peach. Each species gets a one-letter code (A, P, H) used in tree numbers. This helps organize the thousands of specific varieties.',
+        keyFields: [
+          { name: 'id', type: 'UUID', pk: true, description: 'Unique identifier' },
+          { name: 'common_name', type: 'VARCHAR(100)', unique: true, required: true, description: 'Common name (e.g., "Apple")' },
+          { name: 'scientific_name', type: 'VARCHAR(200)', description: 'Scientific name (e.g., "Malus domestica")' },
+          { name: 'code', type: 'CHAR(1)', unique: true, required: true, description: 'Single letter code (A=Apple, P=Pear, etc.)' }
+        ],
+        relationships: [
+          { type: 'one-to-many', target: 'varieties', description: 'All varieties of this species' },
+          { type: 'one-to-many', target: 'orchard_blocks', description: 'Blocks primarily growing this species' }
+        ],
+        businessRules: [
+          'Each species has exactly one single-letter code',
+          'Code is used as prefix in tree numbers (A-HON-0001)',
+          'Currently supported: A=Apple, P=Pear, H=Peach, C=Cherry, L=Plum, E=Elderberry, Q=Quince, R=Apricot, N=Nectarine',
+          'Scientific names follow botanical nomenclature'
+        ],
+        indexes: ['common_name', 'code']
+      },
+      {
+        id: 'varieties',
+        name: 'varieties',
+        category: 'varieties',
+        businessName: 'Varieties',
+        technicalDescription: 'Both scion varieties (Honeycrisp) and rootstocks (M.9) with full characteristics',
+        businessDescription: 'Specific cultivars and rootstocks. Scion varieties are what produces the fruit (Honeycrisp, Enterprise). Rootstocks are what the tree is grafted onto (M.9, G.41) - they control tree size and disease resistance.',
+        keyFields: [
+          { name: 'id', type: 'UUID', pk: true, description: 'Unique identifier' },
+          { name: 'species_id', type: 'UUID', fk: 'fruit_species', required: true, description: 'Which fruit species' },
+          { name: 'variety_name', type: 'VARCHAR(200)', required: true, description: 'Name (e.g., "Honeycrisp", "M.9")' },
+          { name: 'code', type: 'VARCHAR(10)', description: 'Short code (e.g., "HON", "M9")' },
+          { name: 'is_rootstock', type: 'BOOLEAN', required: true, description: 'TRUE for rootstocks, FALSE for scions' },
+          { name: 'vigor_category', type: 'VARCHAR(20)', description: 'For rootstocks: DWARF, SEMI_DWARF, STANDARD' },
+          { name: 'mature_height_min_ft', type: 'NUMERIC(5,2)', description: 'Minimum mature height in feet' },
+          { name: 'mature_height_max_ft', type: 'NUMERIC(5,2)', description: 'Maximum mature height in feet' },
+          { name: 'fire_blight_resistance', type: 'INTEGER', description: '1-5 scale (5 = highly resistant)' },
+          { name: 'scab_resistance', type: 'INTEGER', description: '1-5 scale (5 = highly resistant)' },
+          { name: 'ripening_window', type: 'VARCHAR(100)', description: 'When fruit ripens (e.g., "Mid-August")' },
+          { name: 'trademark_name', type: 'VARCHAR(200)', description: 'Brand name (e.g., "Honeycrisp™")' }
+        ],
+        relationships: [
+          { type: 'many-to-one', target: 'fruit_species', description: 'Parent species' },
+          { type: 'one-to-many', target: 'trees', as: 'scion', description: 'Trees with this scion' },
+          { type: 'one-to-many', target: 'trees', as: 'rootstock', description: 'Trees with this rootstock' }
+        ],
+        businessRules: [
+          'is_rootstock=TRUE: Focus on vigor, height, support needs',
+          'is_rootstock=FALSE: Focus on fruit quality, ripening, disease resistance',
+          'Disease resistance ratings: 1=susceptible, 5=highly resistant',
+          'Rootstock vigor determines tree size: DWARF (8-12ft), SEMI_DWARF (12-18ft), STANDARD (18-30ft)',
+          'Trademark names indicate proprietary varieties that may have licensing fees'
+        ],
+        indexes: ['species_id', 'variety_name', 'code', 'is_rootstock', 'is_active']
+      },
+
+      // NURSERY
+      {
+        id: 'nursery_orders',
+        name: 'nursery_orders',
+        category: 'nursery',
+        businessName: 'Nursery Orders',
+        technicalDescription: 'Client orders for nursery trees (sales tracking)',
+        businessDescription: 'When a client orders trees from Adam\'s nursery. Tracks the entire sales process from quote to delivery, including quantities, pricing, and fulfillment.',
+        keyFields: [
+          { name: 'id', type: 'UUID', pk: true, description: 'Unique identifier' },
+          { name: 'order_number', type: 'VARCHAR(50)', unique: true, required: true, description: 'Auto-generated: NO-2025-001' },
+          { name: 'client_id', type: 'UUID', fk: 'clients', required: true, description: 'Customer' },
+          { name: 'order_date', type: 'DATE', required: true, description: 'When order was placed' },
+          { name: 'requested_date', type: 'DATE', description: 'When client wants trees' },
+          { name: 'status', type: 'nursery_order_status ENUM', required: true, description: 'PENDING → CONFIRMED → IN_PROGRESS → READY → COMPLETED' },
+          { name: 'total_amount', type: 'NUMERIC(12,2)', required: true, description: 'Total order value' },
+          { name: 'deposit_amount', type: 'NUMERIC(12,2)', description: 'Upfront deposit required' },
+          { name: 'deposit_paid', type: 'BOOLEAN', default: false, description: 'Has deposit been received?' }
+        ],
+        relationships: [
+          { type: 'many-to-one', target: 'clients', description: 'Customer placing order' },
+          { type: 'one-to-many', target: 'nursery_order_items', description: 'Line items (varieties ordered)' },
+          { type: 'one-to-many', target: 'nursery_batches', description: 'Batches grown for this order' },
+          { type: 'one-to-many', target: 'work_orders', description: 'Work orders for grafting/preparation' }
+        ],
+        businessRules: [
+          'Order number format: NO-{YEAR}-{SEQUENCE} (e.g., NO-2025-001)',
+          'Status flow: QUOTE → PENDING → CONFIRMED → IN_PROGRESS → READY → COMPLETED',
+          'Deposit amount typically 25-50% of total',
+          'Requested date helps schedule grafting batches',
+          'Multiple line items per order (different varieties)',
+          'Can generate invoice when COMPLETED'
+        ],
+        indexes: ['client_id', 'status', 'order_date']
+      },
+      {
+        id: 'nursery_order_items',
+        name: 'nursery_order_items',
+        category: 'nursery',
+        businessName: 'Nursery Order Items',
+        technicalDescription: 'Line items on nursery orders',
+        businessDescription: 'Individual varieties and quantities on a nursery order. Example: "50 Honeycrisp on G.41 rootstock at $15 each".',
+        keyFields: [
+          { name: 'id', type: 'UUID', pk: true, description: 'Unique identifier' },
+          { name: 'order_id', type: 'UUID', fk: 'nursery_orders', required: true, description: 'Parent order' },
+          { name: 'scion_variety_id', type: 'UUID', fk: 'varieties', required: true, description: 'Fruiting variety ordered' },
+          { name: 'rootstock_variety_id', type: 'UUID', fk: 'varieties', description: 'Rootstock requested' },
+          { name: 'quantity_ordered', type: 'INTEGER', required: true, description: 'How many trees ordered' },
+          { name: 'quantity_produced', type: 'INTEGER', default: 0, description: 'How many successfully grafted' },
+          { name: 'quantity_delivered', type: 'INTEGER', default: 0, description: 'How many delivered to client' },
+          { name: 'unit_price', type: 'NUMERIC(10,2)', required: true, description: 'Price per tree' },
+          { name: 'total_price', type: 'NUMERIC(12,2)', required: true, description: 'quantity × unit_price' }
+        ],
+        relationships: [
+          { type: 'many-to-one', target: 'nursery_orders', description: 'Parent order' },
+          { type: 'many-to-one', target: 'varieties', as: 'scion', description: 'Scion variety' },
+          { type: 'many-to-one', target: 'varieties', as: 'rootstock', description: 'Rootstock' },
+          { type: 'many-to-one', target: 'nursery_batches', description: 'Batch fulfilling this item' },
+          { type: 'one-to-many', target: 'trees', description: 'Trees produced for this order item' }
+        ],
+        businessRules: [
+          'Quantity ordered vs produced tracks graft success rate',
+          'Quantity delivered tracks fulfillment',
+          'Overproduction (produced > ordered) common as insurance',
+          'Unit price can vary by variety, rootstock, and order size',
+          'Total price = quantity_ordered × unit_price'
+        ],
+        indexes: ['order_id', 'scion_variety_id']
+      },
+      {
+        id: 'nursery_batches',
+        name: 'nursery_batches',
+        category: 'nursery',
+        businessName: 'Nursery Batches',
+        technicalDescription: 'Grafting/propagation batches',
+        businessDescription: 'A group of trees grafted at the same time with the same scion/rootstock combination. Tracks the entire process from grafting through growing to readiness for sale.',
+        keyFields: [
+          { name: 'id', type: 'UUID', pk: true, description: 'Unique identifier' },
+          { name: 'batch_number', type: 'VARCHAR(50)', unique: true, required: true, description: 'Auto-generated: NB-2025-001' },
+          { name: 'location_id', type: 'UUID', fk: 'locations', required: true, description: 'Nursery location' },
+          { name: 'scion_variety_id', type: 'UUID', fk: 'varieties', required: true, description: 'Variety being grafted' },
+          { name: 'rootstock_variety_id', type: 'UUID', fk: 'varieties', description: 'Rootstock used' },
+          { name: 'graft_year', type: 'SMALLINT', required: true, description: 'Year grafted' },
+          { name: 'graft_date', type: 'DATE', description: 'Specific date of grafting' },
+          { name: 'status', type: 'nursery_batch_status ENUM', required: true, description: 'PLANNED → GRAFTED → HEALING → LINED_OUT → READY_TO_DIG' },
+          { name: 'planned_quantity', type: 'INTEGER', default: 0, description: 'How many planned to graft' },
+          { name: 'grafted_quantity', type: 'INTEGER', default: 0, description: 'How many actually grafted' }
+        ],
+        relationships: [
+          { type: 'many-to-one', target: 'locations', description: 'Nursery where grown' },
+          { type: 'many-to-one', target: 'varieties', as: 'scion', description: 'Scion variety' },
+          { type: 'many-to-one', target: 'varieties', as: 'rootstock', description: 'Rootstock' },
+          { type: 'many-to-one', target: 'nursery_orders', description: 'Order this batch fulfills' },
+          { type: 'one-to-many', target: 'trees', description: 'Individual trees from this batch' }
+        ],
+        businessRules: [
+          'Batch number format: NB-{YEAR}-{SEQUENCE}',
+          'Status lifecycle: PLANNED → GRAFTED → HEALING → LINED_OUT → READY_TO_DIG → COMPLETED',
+          'Successful quantity computed from COUNT of trees with this batch',
+          'Graft success rate = successful / grafted (typically 70-90%)',
+          'Trees remain in batch until sold/planted',
+          'Can be linked to specific nursery order or speculative production'
+        ],
+        indexes: ['location_id', 'scion_variety_id', 'graft_year', 'status']
+      },
+
+      // WORK ORDERS
+      {
+        id: 'work_orders',
+        name: 'work_orders',
+        category: 'work',
+        businessName: 'Work Orders',
+        technicalDescription: 'Work to be performed at locations, optionally on specific trees',
+        businessDescription: 'Tasks that need to be done - pruning, spraying, harvesting, etc. Tracks who does the work, how long it takes, and gets added to invoices for billing.',
+        keyFields: [
+          { name: 'id', type: 'UUID', pk: true, description: 'Unique identifier' },
+          { name: 'work_order_number', type: 'VARCHAR(50)', unique: true, required: true, description: 'Auto: WO-2025-0001' },
+          { name: 'client_id', type: 'UUID', fk: 'clients', required: true, description: 'Client work is for' },
+          { name: 'location_id', type: 'UUID', fk: 'locations', required: true, description: 'Where work happens' },
+          { name: 'status', type: 'work_order_status ENUM', required: true, description: 'DRAFT → PROPOSED → APPROVED → IN_PROGRESS → COMPLETED → INVOICED' },
+          { name: 'priority', type: 'work_priority ENUM', required: true, description: 'LOW, NORMAL, HIGH, URGENT' },
+          { name: 'title', type: 'VARCHAR(200)', required: true, description: 'Brief description' },
+          { name: 'assigned_to_id', type: 'UUID', fk: 'users', description: 'Worker assigned' },
+          { name: 'scheduled_start', type: 'TIMESTAMPTZ', description: 'When work should start' },
+          { name: 'actual_hours', type: 'NUMERIC(8,2)', description: 'Computed from time entries' },
+          { name: 'actual_labor_cost', type: 'NUMERIC(12,2)', description: 'What Adam pays workers' },
+          { name: 'actual_billable', type: 'NUMERIC(12,2)', description: 'What Adam charges client' }
+        ],
+        relationships: [
+          { type: 'many-to-one', target: 'clients', description: 'Client being served' },
+          { type: 'many-to-one', target: 'locations', description: 'Work location' },
+          { type: 'many-to-one', target: 'work_order_types', description: 'Type of work' },
+          { type: 'many-to-one', target: 'users', as: 'assigned_to', description: 'Worker' },
+          { type: 'one-to-many', target: 'time_entries', description: 'Time logged on work' },
+          { type: 'one-to-many', target: 'invoice_line_items', description: 'Appears on invoices' }
+        ],
+        businessRules: [
+          'Work order number format: WO-{YEAR}-{SEQUENCE}',
+          'Status flow: DRAFT → PROPOSED → CLIENT_REVIEW → APPROVED → SCHEDULED → IN_PROGRESS → COMPLETED → VERIFIED → INVOICED',
+          'Can be DENIED or CANCELLED at any point',
+          'Actual costs computed from time entries (worker hourly_rate × hours)',
+          'Gross margin = actual_billable - actual_labor_cost',
+          'Can apply to entire location or specific trees (tree_ids array)',
+          'Client approval required for work over certain dollar threshold'
+        ],
+        indexes: ['client_id', 'location_id', 'status', 'priority', 'assigned_to_id', 'scheduled_start']
+      },
+      {
+        id: 'time_entries',
+        name: 'time_entries',
+        category: 'work',
+        businessName: 'Time Entries',
+        technicalDescription: 'Time tracking for work orders with automatic labor cost calculation',
+        businessDescription: 'Workers clock in and out on work orders. System automatically calculates labor cost (what Adam pays) and billable amount (what Adam charges), accounting for overtime and breaks.',
+        keyFields: [
+          { name: 'id', type: 'UUID', pk: true, description: 'Unique identifier' },
+          { name: 'work_order_id', type: 'UUID', fk: 'work_orders', required: true, description: 'Work order' },
+          { name: 'user_id', type: 'UUID', fk: 'users', required: true, description: 'Worker' },
+          { name: 'start_time', type: 'TIMESTAMPTZ', required: true, description: 'Clock in time' },
+          { name: 'end_time', type: 'TIMESTAMPTZ', description: 'Clock out time (NULL = still working)' },
+          { name: 'duration_minutes', type: 'INTEGER', description: 'Auto-calculated from start/end' },
+          { name: 'break_minutes', type: 'INTEGER', default: 0, description: 'Unpaid break time' },
+          { name: 'hourly_rate', type: 'NUMERIC(10,2)', description: 'Snapshot of user hourly_rate at time of entry' },
+          { name: 'billable_rate', type: 'NUMERIC(10,2)', description: 'Snapshot of user billable_rate' },
+          { name: 'labor_cost', type: 'NUMERIC(10,2)', description: 'Auto: (duration - breaks) × hourly_rate' },
+          { name: 'billable_amount', type: 'NUMERIC(10,2)', description: 'Auto: (duration - breaks) × billable_rate' }
+        ],
+        relationships: [
+          { type: 'many-to-one', target: 'work_orders', description: 'Work order being worked on' },
+          { type: 'many-to-one', target: 'users', description: 'Worker logging time' }
+        ],
+        businessRules: [
+          'Database trigger auto-calculates duration from start/end times',
+          'Database trigger auto-calculates costs from user rates',
+          'Rates are snapshotted at time of entry (preserved if user rates change)',
+          'Net time = duration_minutes - break_minutes',
+          'Labor cost = (net time / 60) × hourly_rate',
+          'Billable amount = (net time / 60) × billable_rate',
+          'Supports offline entry via PWA with sync when online',
+          'Can have multiple time entries per work order per worker'
+        ],
+        indexes: ['work_order_id', 'user_id', 'start_time', 'is_synced']
+      },
+
+      // BILLING
+      {
+        id: 'invoices',
+        name: 'invoices',
+        category: 'billing',
+        businessName: 'Invoices',
+        technicalDescription: 'Client invoices with automatic due date calculation',
+        businessDescription: 'Bills sent to clients for work performed. Includes line items from completed work orders and nursery orders. Tracks payment status and aging.',
+        keyFields: [
+          { name: 'id', type: 'UUID', pk: true, description: 'Unique identifier' },
+          { name: 'invoice_number', type: 'VARCHAR(50)', unique: true, required: true, description: 'Auto: INV-2025-0001' },
+          { name: 'client_id', type: 'UUID', fk: 'clients', required: true, description: 'Client being invoiced' },
+          { name: 'invoice_date', type: 'DATE', required: true, description: 'Date invoice created' },
+          { name: 'due_date', type: 'DATE', description: 'Auto-set from client payment_terms' },
+          { name: 'status', type: 'invoice_status ENUM', required: true, description: 'DRAFT → SENT → PAID' },
+          { name: 'subtotal', type: 'NUMERIC(12,2)', required: true, description: 'Sum of line items' },
+          { name: 'tax_amount', type: 'NUMERIC(12,2)', default: 0, description: 'Calculated tax' },
+          { name: 'total_amount', type: 'NUMERIC(12,2)', required: true, description: 'Subtotal + tax - discount' },
+          { name: 'paid_amount', type: 'NUMERIC(12,2)', default: 0, description: 'Total received so far' },
+          { name: 'balance_due', type: 'NUMERIC(12,2)', description: 'Auto: total - paid' }
+        ],
+        relationships: [
+          { type: 'many-to-one', target: 'clients', description: 'Client being billed' },
+          { type: 'many-to-one', target: 'locations', description: 'Primary location (optional)' },
+          { type: 'one-to-many', target: 'invoice_line_items', description: 'Individual charges' },
+          { type: 'one-to-many', target: 'payments', description: 'Payments received' }
+        ],
+        businessRules: [
+          'Invoice number format: INV-{YEAR}-{SEQUENCE}',
+          'Due date auto-calculated: invoice_date + client.payment_terms days',
+          'Status flow: DRAFT → SENT → PARTIALLY_PAID → PAID',
+          'Can become OVERDUE if unpaid after due date',
+          'Balance due auto-calculated: total_amount - paid_amount',
+          'Line items come from completed work orders and nursery orders',
+          'Can include discount for early payment or volume'
+        ],
+        indexes: ['client_id', 'status', 'invoice_date', 'due_date']
+      },
+      {
+        id: 'invoice_line_items',
+        name: 'invoice_line_items',
+        category: 'billing',
+        businessName: 'Invoice Line Items',
+        technicalDescription: 'Individual charges on invoices',
+        businessDescription: 'Specific charges on an invoice. Each line item might be a work order, batch of nursery trees, or other billable item.',
+        keyFields: [
+          { name: 'id', type: 'UUID', pk: true, description: 'Unique identifier' },
+          { name: 'invoice_id', type: 'UUID', fk: 'invoices', required: true, description: 'Parent invoice' },
+          { name: 'work_order_id', type: 'UUID', fk: 'work_orders', description: 'Work order being billed (optional)' },
+          { name: 'nursery_order_item_id', type: 'UUID', fk: 'nursery_order_items', description: 'Nursery item being billed (optional)' },
+          { name: 'description', type: 'TEXT', required: true, description: 'What is being charged' },
+          { name: 'quantity', type: 'NUMERIC(10,2)', default: 1, description: 'Quantity of item' },
+          { name: 'unit_price', type: 'NUMERIC(12,2)', default: 0, description: 'Price per unit' },
+          { name: 'total_amount', type: 'NUMERIC(12,2)', default: 0, description: 'quantity × unit_price' }
+        ],
+        relationships: [
+          { type: 'many-to-one', target: 'invoices', description: 'Parent invoice' },
+          { type: 'many-to-one', target: 'work_orders', description: 'Work order (if applicable)' },
+          { type: 'many-to-one', target: 'nursery_order_items', description: 'Nursery item (if applicable)' }
+        ],
+        businessRules: [
+          'At least one of work_order_id or nursery_order_item_id should be set',
+          'Description auto-generated from linked item but can be customized',
+          'Total amount = quantity × unit_price',
+          'Sort order determines display order on printed invoice'
+        ],
+        indexes: ['invoice_id', 'work_order_id', 'nursery_order_item_id']
+      },
+      {
+        id: 'payments',
+        name: 'payments',
+        category: 'billing',
+        businessName: 'Payments',
+        technicalDescription: 'Individual payments toward invoices',
+        businessDescription: 'When a client makes a payment (check, ACH, credit card, etc.). Multiple payments can be applied to a single invoice.',
+        keyFields: [
+          { name: 'id', type: 'UUID', pk: true, description: 'Unique identifier' },
+          { name: 'invoice_id', type: 'UUID', fk: 'invoices', required: true, description: 'Invoice being paid' },
+          { name: 'payment_date', type: 'DATE', required: true, description: 'When payment received' },
+          { name: 'amount', type: 'NUMERIC(12,2)', required: true, description: 'Amount of payment' },
+          { name: 'payment_method', type: 'payment_method ENUM', required: true, description: 'CHECK, ACH, CREDIT_CARD, etc.' },
+          { name: 'check_number', type: 'VARCHAR(50)', description: 'Check # (if applicable)' },
+          { name: 'transaction_id', type: 'VARCHAR(255)', description: 'Payment processor transaction ID' },
+          { name: 'reference_number', type: 'VARCHAR(100)', description: 'Internal reference number' }
+        ],
+        relationships: [
+          { type: 'many-to-one', target: 'invoices', description: 'Invoice being paid' },
+          { type: 'many-to-one', target: 'users', as: 'received_by', description: 'User who recorded payment' }
+        ],
+        businessRules: [
+          'Payment methods: CHECK, ACH, CREDIT_CARD, CASH, WIRE, OTHER',
+          'Multiple payments can be applied to one invoice (partial payments)',
+          'Total payments on invoice updates invoice.paid_amount',
+          'Invoice status auto-updates based on paid_amount',
+          'Check payments should include check_number',
+          'Electronic payments should include transaction_id from processor'
+        ],
+        indexes: ['invoice_id', 'payment_date', 'payment_method']
+      },
+
+      // INVENTORY
+      {
+        id: 'inventory_items',
+        name: 'inventory_items',
+        category: 'inventory',
+        businessName: 'Inventory Items',
+        technicalDescription: 'Supplies, equipment, chemicals, and materials tracked in inventory',
+        businessDescription: 'Everything Adam needs to run the orchard - chemicals, fertilizers, tools, equipment. Tracks quantities, costs, and minimum stock levels for reordering.',
+        keyFields: [
+          { name: 'id', type: 'UUID', pk: true, description: 'Unique identifier' },
+          { name: 'name', type: 'VARCHAR(200)', required: true, description: 'Item name' },
+          { name: 'category', type: 'inventory_category ENUM', required: true, description: 'CHEMICAL, FERTILIZER, TOOL, EQUIPMENT, SUPPLY' },
+          { name: 'quantity', type: 'NUMERIC(12,2)', default: 0, description: 'Current quantity on hand' },
+          { name: 'unit', type: 'VARCHAR(50)', required: true, description: 'Unit of measure (gallons, bags, each)' },
+          { name: 'min_stock_level', type: 'NUMERIC(12,2)', default: 0, description: 'Reorder threshold' },
+          { name: 'cost_per_unit', type: 'NUMERIC(12,2)', description: 'What Adam pays for item' },
+          { name: 'price_per_unit', type: 'NUMERIC(12,2)', description: 'What Adam charges clients' },
+          { name: 'stock_status', type: 'stock_status ENUM', description: 'Auto: IN_STOCK, LOW_STOCK, OUT_OF_STOCK' }
+        ],
+        relationships: [
+          { type: 'many-to-one', target: 'locations', as: 'storage_location', description: 'Where stored' },
+          { type: 'one-to-many', target: 'inventory_transactions', description: 'All inventory movements' }
+        ],
+        businessRules: [
+          'Stock status auto-calculated by trigger:',
+          '  - OUT_OF_STOCK if quantity <= 0',
+          '  - LOW_STOCK if quantity <= min_stock_level',
+          '  - IN_STOCK otherwise',
+          'Categories help organize large inventories',
+          'Both cost and price tracked for margin calculation',
+          'Equipment flag enables maintenance tracking',
+          'Quantities can be fractional (e.g., 2.5 gallons)'
+        ],
+        indexes: ['category', 'stock_status', 'storage_location_id', 'is_active']
+      },
+      {
+        id: 'inventory_transactions',
+        name: 'inventory_transactions',
+        category: 'inventory',
+        businessName: 'Inventory Transactions',
+        technicalDescription: 'All inventory movements - purchases, usage, adjustments, transfers',
+        businessDescription: 'Complete audit trail of every time inventory changes. Records who did it, why, and for what work order (if applicable).',
+        keyFields: [
+          { name: 'id', type: 'UUID', pk: true, description: 'Unique identifier' },
+          { name: 'inventory_item_id', type: 'UUID', fk: 'inventory_items', required: true, description: 'Item affected' },
+          { name: 'transaction_type', type: 'inventory_transaction_type ENUM', required: true, description: 'PURCHASE, USAGE, ADJUSTMENT, TRANSFER, DISPOSAL' },
+          { name: 'quantity_change', type: 'NUMERIC(12,2)', required: true, description: 'Amount changed (+ or -)' },
+          { name: 'quantity_before', type: 'NUMERIC(12,2)', required: true, description: 'Quantity before transaction' },
+          { name: 'quantity_after', type: 'NUMERIC(12,2)', required: true, description: 'Quantity after transaction' },
+          { name: 'unit_cost', type: 'NUMERIC(12,2)', description: 'Cost per unit for this transaction' },
+          { name: 'work_order_id', type: 'UUID', fk: 'work_orders', description: 'Work order using inventory (if applicable)' }
+        ],
+        relationships: [
+          { type: 'many-to-one', target: 'inventory_items', description: 'Item affected' },
+          { type: 'many-to-one', target: 'work_orders', description: 'Work order (if used)' },
+          { type: 'many-to-one', target: 'locations', as: 'from_location', description: 'For transfers: source' },
+          { type: 'many-to-one', target: 'locations', as: 'to_location', description: 'For transfers: destination' },
+          { type: 'many-to-one', target: 'users', as: 'created_by', description: 'Who recorded transaction' }
+        ],
+        businessRules: [
+          'Transaction types:',
+          '  - PURCHASE: Buying/receiving inventory (positive quantity)',
+          '  - USAGE: Using inventory on a job (negative quantity)',
+          '  - ADJUSTMENT: Manual correction (+ or -)',
+          '  - TRANSFER: Moving between locations',
+          '  - DISPOSAL: Expired/damaged goods (negative)',
+          'Quantity_before and quantity_after provide audit trail',
+          'Unit cost can differ from item.cost_per_unit for specific purchases',
+          'Complete immutable audit log of all inventory changes'
+        ],
+        indexes: ['inventory_item_id', 'transaction_type', 'work_order_id', 'created_at']
+      },
+
+      // TREE HEALTH
+      {
+        id: 'tree_health_records',
+        name: 'tree_health_records',
+        category: 'health',
+        businessName: 'Tree Health Records',
+        technicalDescription: 'Individual health observations for specific trees over time',
+        businessDescription: 'Every time someone inspects a tree, they create a health record. Includes observations, ratings, issues found, and treatments applied. Enables tracking health trends over time.',
+        keyFields: [
+          { name: 'id', type: 'UUID', pk: true, description: 'Unique identifier' },
+          { name: 'tree_id', type: 'UUID', fk: 'trees', required: true, description: 'Tree inspected' },
+          { name: 'observation_date', type: 'DATE', required: true, description: 'When observed' },
+          { name: 'health_status', type: 'health_status ENUM', required: true, description: 'Status at observation' },
+          { name: 'previous_status', type: 'health_status ENUM', description: 'Auto-captured by trigger' },
+          { name: 'vigor_rating', type: 'INTEGER', description: '1-5 scale (5=excellent growth)' },
+          { name: 'leaf_condition', type: 'INTEGER', description: '1-5 scale (5=perfect leaves)' },
+          { name: 'pest_damage_level', type: 'INTEGER', description: '1-5 scale (5=no damage)' },
+          { name: 'issues_observed', type: 'TEXT[]', description: 'Array: ["fire_blight", "aphids"]' },
+          { name: 'treatment_applied', type: 'TEXT', description: 'What was done' },
+          { name: 'follow_up_required', type: 'BOOLEAN', description: 'Needs another check?' },
+          { name: 'follow_up_date', type: 'DATE', description: 'When to check again' }
+        ],
+        relationships: [
+          { type: 'many-to-one', target: 'trees', description: 'Tree being observed' },
+          { type: 'many-to-one', target: 'work_orders', description: 'Work order (if inspection was part of work)' },
+          { type: 'many-to-one', target: 'users', as: 'recorded_by', description: 'Who recorded observation' },
+          { type: 'one-to-many', target: 'tree_health_alerts', description: 'Alerts generated from this record' }
+        ],
+        businessRules: [
+          'Database trigger auto-captures previous_status from tree',
+          'Database trigger auto-updates tree.health_status',
+          'Database trigger auto-checks alert rules',
+          'Ratings use 1-5 scale (5 = best)',
+          'Issues array enables multi-issue tracking',
+          'Follow-up system ensures problems are revisited',
+          'Creates complete health history per tree'
+        ],
+        indexes: ['tree_id', 'observation_date', 'health_status', 'follow_up_date', 'issues_observed (GIN)']
+      },
+      {
+        id: 'tree_health_alert_rules',
+        name: 'tree_health_alert_rules',
+        category: 'health',
+        businessName: 'Health Alert Rules',
+        technicalDescription: 'Configurable rules for when to generate health alerts',
+        businessDescription: 'Automatic alerts based on conditions. Example: "Alert manager when any tree changes from HEALTHY to DISEASED". Prevents problems from being overlooked.',
+        keyFields: [
+          { name: 'id', type: 'UUID', pk: true, description: 'Unique identifier' },
+          { name: 'name', type: 'VARCHAR(200)', required: true, description: 'Rule name' },
+          { name: 'trigger_type', type: 'VARCHAR(50)', required: true, description: 'status_change, threshold, pattern' },
+          { name: 'from_status', type: 'health_status ENUM', description: 'Alert when changing FROM this' },
+          { name: 'to_status', type: 'health_status ENUM', description: 'Alert when changing TO this' },
+          { name: 'alert_priority', type: 'notification_priority ENUM', description: 'URGENT, HIGH, NORMAL, LOW' },
+          { name: 'notify_roles', type: 'user_role[]', description: 'Which roles to notify' },
+          { name: 'cooldown_hours', type: 'INTEGER', default: 24, description: 'Prevent spam (re-alert after X hours)' },
+          { name: 'is_active', type: 'BOOLEAN', default: true, description: 'Is rule enabled?' }
+        ],
+        relationships: [
+          { type: 'many-to-one', target: 'locations', description: 'Apply to specific location (NULL = all)' },
+          { type: 'one-to-many', target: 'tree_health_alerts', description: 'Alerts generated by this rule' }
+        ],
+        businessRules: [
+          'Trigger types:',
+          '  - status_change: Alert when status changes (e.g., HEALTHY → DISEASED)',
+          '  - threshold: Alert when metric crosses threshold (e.g., >10% diseased)',
+          '  - pattern: Alert on patterns (e.g., 3 trees in same row diseased)',
+          'Can notify specific roles (ADMIN, MANAGER) or specific users',
+          'Cooldown prevents alert spam for same tree',
+          'Location_id NULL = rule applies system-wide',
+          'Rules can be enabled/disabled without deletion'
+        ],
+        indexes: ['is_active', 'location_id']
+      },
+      {
+        id: 'tree_health_alerts',
+        name: 'tree_health_alerts',
+        category: 'health',
+        businessName: 'Health Alerts',
+        technicalDescription: 'Generated alerts with acknowledgment and resolution tracking',
+        businessDescription: 'Alerts created when health rules are triggered. Tracks who acknowledged them, who resolved them, and what work was done to fix the problem.',
+        keyFields: [
+          { name: 'id', type: 'UUID', pk: true, description: 'Unique identifier' },
+          { name: 'alert_rule_id', type: 'UUID', fk: 'tree_health_alert_rules', description: 'Rule that triggered alert' },
+          { name: 'tree_id', type: 'UUID', fk: 'trees', description: 'Tree with issue' },
+          { name: 'tree_health_record_id', type: 'UUID', fk: 'tree_health_records', description: 'Observation that triggered' },
+          { name: 'status', type: 'VARCHAR(50)', required: true, description: 'OPEN, ACKNOWLEDGED, RESOLVED, DISMISSED' },
+          { name: 'alert_priority', type: 'notification_priority ENUM', description: 'URGENT, HIGH, NORMAL, LOW' },
+          { name: 'title', type: 'VARCHAR(200)', required: true, description: 'Alert title' },
+          { name: 'message', type: 'TEXT', required: true, description: 'Alert details' },
+          { name: 'acknowledged_by', type: 'UUID', fk: 'users', description: 'Who acknowledged' },
+          { name: 'resolved_by', type: 'UUID', fk: 'users', description: 'Who resolved' },
+          { name: 'resolution_work_order_id', type: 'UUID', fk: 'work_orders', description: 'Work order that fixed it' }
+        ],
+        relationships: [
+          { type: 'many-to-one', target: 'tree_health_alert_rules', description: 'Rule that triggered' },
+          { type: 'many-to-one', target: 'trees', description: 'Affected tree' },
+          { type: 'many-to-one', target: 'tree_health_records', description: 'Triggering observation' },
+          { type: 'many-to-one', target: 'work_orders', as: 'resolution', description: 'Fix work order' },
+          { type: 'many-to-one', target: 'users', as: 'acknowledged_by', description: 'Who acknowledged' },
+          { type: 'many-to-one', target: 'users', as: 'resolved_by', description: 'Who resolved' }
+        ],
+        businessRules: [
+          'Status lifecycle: OPEN → ACKNOWLEDGED → RESOLVED',
+          'Can be DISMISSED if false alarm',
+          'Priority comes from triggering rule',
+          'Title/message can be templated from rule',
+          'Acknowledgment = "I saw this alert"',
+          'Resolution = "Problem is fixed" (with work order link)',
+          'Complete audit trail from detection to resolution'
+        ],
+        indexes: ['tree_id', 'status', 'alert_priority', 'created_at']
+      },
+
+      // SUPPORTING SYSTEMS
+      {
+        id: 'notifications',
+        name: 'notifications',
+        category: 'support',
+        businessName: 'Notifications',
+        technicalDescription: 'System notifications with in-app and email delivery',
+        businessDescription: 'Alerts and messages shown to users in the app and/or sent via email. Tracks read status and delivery.',
+        keyFields: [
+          { name: 'id', type: 'UUID', pk: true, description: 'Unique identifier' },
+          { name: 'user_id', type: 'UUID', fk: 'users', required: true, description: 'Recipient' },
+          { name: 'notification_type', type: 'notification_type ENUM', required: true, description: 'Type of notification' },
+          { name: 'priority', type: 'notification_priority ENUM', description: 'URGENT, HIGH, NORMAL, LOW' },
+          { name: 'title', type: 'VARCHAR(200)', required: true, description: 'Notification title' },
+          { name: 'message', type: 'TEXT', required: true, description: 'Full message' },
+          { name: 'entity_type', type: 'VARCHAR(50)', description: 'Related entity type (TREE, WORK_ORDER, etc.)' },
+          { name: 'entity_id', type: 'UUID', description: 'Related entity ID' },
+          { name: 'delivery_method', type: 'notification_delivery ENUM', description: 'IN_APP, EMAIL, or BOTH' },
+          { name: 'is_read', type: 'BOOLEAN', default: false, description: 'Read in app?' },
+          { name: 'email_sent', type: 'BOOLEAN', default: false, description: 'Email sent?' }
+        ],
+        relationships: [
+          { type: 'many-to-one', target: 'users', description: 'User receiving notification' }
+        ],
+        businessRules: [
+          'Types: WORK_ORDER_CREATED, WORK_ORDER_APPROVED, TREE_HEALTH_ALERT, LOW_STOCK_ALERT, etc.',
+          'Delivery methods: IN_APP (only in app), EMAIL (only email), BOTH',
+          'Entity type/ID provide link back to source',
+          'User notification preferences control what they receive',
+          'Email sending tracked separately from in-app read status'
+        ],
+        indexes: ['user_id', 'is_read', 'notification_type', 'created_at', 'email_sent']
+      },
+      {
+        id: 'photos',
+        name: 'photos',
+        category: 'support',
+        businessName: 'Photos',
+        technicalDescription: 'Photos attached to any entity (polymorphic)',
+        businessDescription: 'Photos of trees, work orders, locations, etc. Tracks compression stats and GPS coordinates from camera.',
+        keyFields: [
+          { name: 'id', type: 'UUID', pk: true, description: 'Unique identifier' },
+          { name: 'context_type', type: 'photo_context ENUM', required: true, description: 'TREE, LOCATION, WORK_ORDER, etc.' },
+          { name: 'context_id', type: 'UUID', required: true, description: 'ID of entity photo is attached to' },
+          { name: 'file_path', type: 'TEXT', required: true, description: 'Path to stored file' },
+          { name: 'original_size', type: 'BIGINT', description: 'Original size in bytes' },
+          { name: 'compressed_size', type: 'BIGINT', description: 'After compression' },
+          { name: 'latitude', type: 'NUMERIC(10,7)', description: 'GPS latitude from EXIF' },
+          { name: 'longitude', type: 'NUMERIC(10,7)', description: 'GPS longitude from EXIF' }
+        ],
+        relationships: [
+          { type: 'many-to-one', target: 'users', as: 'created_by', description: 'Who uploaded photo' }
+        ],
+        businessRules: [
+          'Polymorphic relationship: context_type + context_id',
+          'Supports: TREE, LOCATION, WORK_ORDER, NURSERY_BATCH, CLIENT, INVENTORY_ITEM',
+          'PWA client compresses photos before upload',
+          'Compression stats help monitor bandwidth usage',
+          'GPS coordinates auto-extracted from EXIF data',
+          'Multiple photos per entity supported'
+        ],
+        indexes: ['context_type + context_id', 'created_by']
+      },
+      {
+        id: 'audit_log',
+        name: 'audit_log',
+        category: 'support',
+        businessName: 'Audit Log',
+        technicalDescription: 'Complete audit trail of every change to every entity',
+        businessDescription: 'Records every create, update, and delete operation with before/after state. Essential for compliance and troubleshooting.',
+        keyFields: [
+          { name: 'id', type: 'UUID', pk: true, description: 'Unique identifier' },
+          { name: 'entity_type', type: 'VARCHAR(50)', required: true, description: 'Type of entity (TREE, WORK_ORDER, etc.)' },
+          { name: 'entity_id', type: 'UUID', required: true, description: 'ID of affected entity' },
+          { name: 'user_id', type: 'UUID', fk: 'users', description: 'Who made the change' },
+          { name: 'action', type: 'VARCHAR(50)', required: true, description: 'CREATE, UPDATE, DELETE, STATUS_CHANGE' },
+          { name: 'old_values', type: 'JSONB', description: 'State before change' },
+          { name: 'new_values', type: 'JSONB', description: 'State after change' },
+          { name: 'changed_fields', type: 'TEXT[]', description: 'Quick list: ["status", "health_status"]' },
+          { name: 'ip_address', type: 'INET', description: 'IP address of request' }
+        ],
+        relationships: [
+          { type: 'many-to-one', target: 'users', description: 'User who made change' }
+        ],
+        businessRules: [
+          'Immutable - no updates or deletes allowed',
+          'JSONB fields store complete before/after state',
+          'Changed_fields array enables fast filtering',
+          'IP address helps with security auditing',
+          'Can be partitioned by date for large datasets',
+          'Provides complete "who changed what when" history'
+        ],
+        indexes: ['entity_type + entity_id', 'user_id', 'created_at', 'action', 'changed_fields (GIN)']
+      }
+    ],
+
+    dataFlows: [
+      {
+        id: 'tree_lifecycle',
+        name: 'Tree Lifecycle',
+        category: 'locations',
+        description: 'Complete journey of a tree from grafting to fruit production',
+        steps: [
+          {
+            stage: 'Grafting',
+            tables: ['nursery_batches', 'varieties'],
+            description: 'Adam creates a nursery batch, grafting a scion variety onto a rootstock',
+            businessContext: 'This is where trees begin. Adam decides which varieties to propagate based on customer demand and his own growing goals.'
+          },
+          {
+            stage: 'Individual Tree Creation',
+            tables: ['trees', 'nursery_batches'],
+            description: 'Each successfully grafted tree gets a unique tree_number (e.g., A-HON-0001)',
+            businessContext: 'Tree numbers never change and are never reused, enabling lifetime tracking. The format encodes species and variety.'
+          },
+          {
+            stage: 'Nursery Growth',
+            tables: ['trees'],
+            status: 'stage = NURSERY_FIELD',
+            description: 'Trees grow in the nursery. Status tracked, inventory managed.',
+            businessContext: 'Trees spend 1-2 years in the nursery growing strong root systems before they\'re ready to sell.'
+          },
+          {
+            stage: 'Reservation',
+            tables: ['trees', 'nursery_orders', 'nursery_order_items'],
+            status: 'stage = RESERVED',
+            description: 'Client places an order. Trees are reserved for that order.',
+            businessContext: 'When a client orders trees, specific trees from inventory are earmarked for them. This prevents double-selling.'
+          },
+          {
+            stage: 'Digging & Shipping Prep',
+            tables: ['trees'],
+            status: 'stage = READY_TO_SHIP',
+            description: 'Trees are dug from nursery rows and prepped for delivery',
+            businessContext: 'Trees are dormant when dug (late fall/early spring). They\'re root-wrapped and staged for transport.'
+          },
+          {
+            stage: 'Delivery & Planting',
+            tables: ['trees', 'locations', 'orchard_blocks'],
+            status: 'stage = ORCHARD_PLANTED, location changes',
+            description: 'Trees delivered to client orchard and planted in specific locations',
+            businessContext: 'The location_id changes from Adam\'s nursery to the client\'s orchard. GPS coordinates recorded for each tree.'
+          },
+          {
+            stage: 'Maturity & Production',
+            tables: ['trees'],
+            status: 'stage = ORCHARD_MATURE',
+            description: 'Trees reach bearing age and begin producing fruit',
+            businessContext: 'Typically 2-4 years after planting. This is when the orchard starts generating revenue for the client.'
+          },
+          {
+            stage: 'Ongoing Monitoring',
+            tables: ['tree_health_records', 'tree_health_alerts'],
+            description: 'Regular health inspections create records, triggering alerts if issues found',
+            businessContext: 'Adam\'s team monitors trees throughout their life. Health records enable trend analysis and early problem detection.'
+          }
+        ]
+      },
+      {
+        id: 'work_order_flow',
+        name: 'Work Order Workflow',
+        category: 'work',
+        description: 'From work proposal to invoice',
+        steps: [
+          {
+            stage: 'Creation',
+            tables: ['work_orders', 'work_order_types'],
+            status: 'status = DRAFT',
+            description: 'Manager creates work order specifying what needs to be done',
+            businessContext: 'Work orders can be for entire orchards or specific trees. Examples: pruning, spraying, harvesting.'
+          },
+          {
+            stage: 'Proposal',
+            tables: ['work_orders'],
+            status: 'status = PROPOSED',
+            description: 'Work order submitted for approval with estimated costs',
+            businessContext: 'Manager proposes work with cost estimate. For large jobs, client approval is required before proceeding.'
+          },
+          {
+            stage: 'Client Review',
+            tables: ['work_orders'],
+            status: 'status = CLIENT_REVIEW',
+            description: 'Client reviews and approves/denies work order via portal',
+            businessContext: 'Client can see the proposal in their portal, review details, and approve or request changes.'
+          },
+          {
+            stage: 'Approval',
+            tables: ['work_orders'],
+            status: 'status = APPROVED',
+            description: 'Work order approved and ready to be scheduled',
+            businessContext: 'Once approved, work can be scheduled based on weather, crew availability, and seasonal timing.'
+          },
+          {
+            stage: 'Scheduling',
+            tables: ['work_orders', 'users'],
+            status: 'status = SCHEDULED',
+            description: 'Work assigned to specific worker with scheduled dates',
+            businessContext: 'Manager assigns work to crew members and sets target dates. Workers see their assignments in the app.'
+          },
+          {
+            stage: 'Execution',
+            tables: ['work_orders', 'time_entries'],
+            status: 'status = IN_PROGRESS',
+            description: 'Workers clock in/out, recording time spent',
+            businessContext: 'Workers use mobile app to clock in when starting work. Time entries automatically calculate costs.'
+          },
+          {
+            stage: 'Completion',
+            tables: ['work_orders', 'time_entries'],
+            status: 'status = COMPLETED',
+            description: 'Work finished. Total hours and costs computed from time entries.',
+            businessContext: 'When worker clocks out and marks complete, actual_hours and actual_costs are calculated from all time entries.'
+          },
+          {
+            stage: 'Verification',
+            tables: ['work_orders'],
+            status: 'status = VERIFIED',
+            description: 'Manager inspects completed work and verifies quality',
+            businessContext: 'Quality check ensures work meets standards before billing client.'
+          },
+          {
+            stage: 'Invoicing',
+            tables: ['work_orders', 'invoices', 'invoice_line_items'],
+            status: 'status = INVOICED',
+            description: 'Work order added to invoice as line item',
+            businessContext: 'Completed work orders are batched into periodic invoices (typically monthly). Labor costs from time entries become billable charges.'
+          }
+        ]
+      },
+      {
+        id: 'nursery_sales',
+        name: 'Nursery Sales Pipeline',
+        category: 'nursery',
+        description: 'From order to delivery',
+        steps: [
+          {
+            stage: 'Quote Request',
+            tables: ['nursery_orders'],
+            status: 'status = QUOTE',
+            description: 'Client requests a quote for specific varieties/quantities',
+            businessContext: 'Client contacts Adam wanting trees. Adam provides pricing based on varieties, quantities, and rootstocks.'
+          },
+          {
+            stage: 'Order Placement',
+            tables: ['nursery_orders', 'nursery_order_items'],
+            status: 'status = PENDING',
+            description: 'Client accepts quote. Order created with line items for each variety.',
+            businessContext: 'Order becomes binding when deposit is paid. Line items specify exact variety/rootstock combinations and prices.'
+          },
+          {
+            stage: 'Batch Assignment',
+            tables: ['nursery_batches', 'nursery_order_items', 'trees'],
+            description: 'Trees reserved from existing inventory or new batch planned',
+            businessContext: 'If Adam has inventory, trees are reserved immediately. Otherwise, a new grafting batch is scheduled.'
+          },
+          {
+            stage: 'Production',
+            tables: ['nursery_batches', 'trees'],
+            status: 'batch status = GRAFTED → HEALING → LINED_OUT',
+            description: 'Trees are grafted, healed, and grown',
+            businessContext: 'Grafting typically happens in spring. Trees spend 1-2 years growing in the nursery before they\'re ready.'
+          },
+          {
+            stage: 'Ready for Harvest',
+            tables: ['nursery_batches', 'trees'],
+            status: 'batch status = READY_TO_DIG, tree stage = RESERVED',
+            description: 'Trees have reached saleable size and are ready to dig',
+            businessContext: 'Adam notifies client when trees are ready. Timing coordinated for optimal planting window (spring or fall).'
+          },
+          {
+            stage: 'Digging & Prep',
+            tables: ['trees', 'work_orders'],
+            status: 'tree stage = READY_TO_SHIP',
+            description: 'Trees dug from nursery rows, roots wrapped, staged for delivery',
+            businessContext: 'This is physical work tracked via work orders. Trees must be dug when dormant for best survival.'
+          },
+          {
+            stage: 'Delivery',
+            tables: ['trees', 'locations', 'nursery_order_items'],
+            status: 'tree stage = ORCHARD_PLANTED, location changes',
+            description: 'Trees delivered to client orchard. Location and stage updated.',
+            businessContext: 'Trees move from Adam\'s nursery to client\'s orchard. quantity_delivered incremented on order item.'
+          },
+          {
+            stage: 'Invoicing',
+            tables: ['invoices', 'invoice_line_items', 'nursery_order_items'],
+            description: 'Order items added to invoice. Deposit applied, balance due calculated.',
+            businessContext: 'Final invoice shows: tree cost - deposit already paid = balance due. Typically payment due on delivery.'
+          }
+        ]
+      },
+      {
+        id: 'health_monitoring',
+        name: 'Tree Health Monitoring',
+        category: 'health',
+        description: 'Proactive health tracking with automatic alerts',
+        steps: [
+          {
+            stage: 'Inspection',
+            tables: ['tree_health_records', 'trees'],
+            description: 'Worker inspects tree, records health status and observations',
+            businessContext: 'Regular inspections catch problems early. Workers use mobile app to record observations on-site.'
+          },
+          {
+            stage: 'Auto-Sync to Tree',
+            tables: ['trees'],
+            trigger: 'Database trigger updates tree.health_status',
+            description: 'Tree health status automatically updated from record',
+            businessContext: 'The trigger ensures trees table always reflects most recent health status for map display.'
+          },
+          {
+            stage: 'Alert Rule Evaluation',
+            tables: ['tree_health_alert_rules'],
+            trigger: 'Database trigger checks all active rules',
+            description: 'System checks if any alert rules are triggered by this observation',
+            businessContext: 'Example rule: "Alert manager when any tree changes from HEALTHY to DISEASED". Rules are configurable.'
+          },
+          {
+            stage: 'Alert Generation',
+            tables: ['tree_health_alerts'],
+            condition: 'If rule conditions met and not in cooldown',
+            description: 'Alert created with priority, title, message from rule template',
+            businessContext: 'Alerts prevent problems from being overlooked. High-priority alerts might trigger push notifications.'
+          },
+          {
+            stage: 'Notification',
+            tables: ['notifications'],
+            description: 'Notifications sent to users specified in alert rule',
+            businessContext: 'Managers/admins get notified via app and/or email. Client may be notified for severe issues.'
+          },
+          {
+            stage: 'Acknowledgment',
+            tables: ['tree_health_alerts'],
+            status: 'status = ACKNOWLEDGED',
+            description: 'Manager acknowledges alert, indicating awareness',
+            businessContext: 'Acknowledgment means "I saw this, will handle it". Prevents duplicate effort.'
+          },
+          {
+            stage: 'Resolution',
+            tables: ['tree_health_alerts', 'work_orders'],
+            status: 'status = RESOLVED',
+            description: 'Work order created to fix issue. Alert linked to work order.',
+            businessContext: 'Problem is resolved through a work order (e.g., "Treat fire blight on tree A-ENT-0042"). Alert tracks the work order that fixed it.'
+          },
+          {
+            stage: 'Follow-up',
+            tables: ['tree_health_records'],
+            condition: 'follow_up_required = TRUE',
+            description: 'Follow-up inspection scheduled to verify problem is resolved',
+            businessContext: 'After treatment, tree is checked again to confirm recovery. This creates another health record, continuing the cycle.'
+          }
+        ]
+      },
+      {
+        id: 'invoice_payment',
+        name: 'Invoice & Payment Flow',
+        category: 'billing',
+        description: 'From work completion to payment receipt',
+        steps: [
+          {
+            stage: 'Invoice Creation',
+            tables: ['invoices'],
+            status: 'status = DRAFT',
+            description: 'Manager creates invoice for a client, typically monthly',
+            businessContext: 'Invoices are usually generated monthly. They include all completed work orders and fulfilled nursery orders for the period.'
+          },
+          {
+            stage: 'Line Item Addition',
+            tables: ['invoice_line_items', 'work_orders', 'nursery_order_items'],
+            description: 'Completed work orders and fulfilled nursery orders added as line items',
+            businessContext: 'Each line item links back to source (work order or nursery order item). Descriptions and amounts come from source.'
+          },
+          {
+            stage: 'Totals Calculation',
+            tables: ['invoices'],
+            trigger: 'Triggers calculate subtotal, tax, total',
+            description: 'Invoice totals auto-calculated from line items',
+            businessContext: 'Subtotal = sum of line items. Tax calculated based on rate. Total = subtotal + tax - discount.'
+          },
+          {
+            stage: 'Due Date Setting',
+            tables: ['invoices'],
+            trigger: 'Trigger sets due_date from client.payment_terms',
+            description: 'Due date automatically calculated: invoice_date + payment_terms days',
+            businessContext: 'Each client has payment terms (typically 30 days). Due date is automatic but can be overridden.'
+          },
+          {
+            stage: 'Sending',
+            tables: ['invoices'],
+            status: 'status = SENT',
+            description: 'Invoice sent to client via email (PDF)',
+            businessContext: 'Client receives invoice by email. If they have portal access, they can also view it there.'
+          },
+          {
+            stage: 'Payment Recording',
+            tables: ['payments'],
+            description: 'When payment received (check, ACH, card), record payment',
+            businessContext: 'Payments are recorded when received. Can be partial or full. Multiple payments can be applied to one invoice.'
+          },
+          {
+            stage: 'Status Updates',
+            tables: ['invoices'],
+            status: 'PARTIALLY_PAID or PAID',
+            trigger: 'Triggers update invoice.paid_amount and status',
+            description: 'Invoice status automatically updates based on payments',
+            businessContext: 'Status changes: SENT → PARTIALLY_PAID (if partial) → PAID (when fully paid). OVERDUE if unpaid after due date.'
+          },
+          {
+            stage: 'Balance Tracking',
+            tables: ['invoices'],
+            trigger: 'Trigger calculates balance_due',
+            description: 'Balance due = total_amount - paid_amount',
+            businessContext: 'Balance_due always reflects current status. When balance_due = 0, invoice is marked PAID.'
+          }
+        ]
+      }
+    ]
+  };
+
+  // Filter tables based on search and category
+  const filteredTables = schema.tables.filter(table => {
+    const matchesSearch = searchTerm === '' ||
+      table.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      table.businessName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      table.businessDescription.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesCategory = filterCategory === 'all' || table.category === filterCategory;
+    
+    return matchesSearch && matchesCategory;
+  });
+
+  // Get category info
+  const getCategoryInfo = (categoryId) => {
+    return schema.categories.find(c => c.id === categoryId) || schema.categories[0];
+  };
+
+  // Toggle section expansion
+  const toggleSection = (section) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [section]: !prev[section]
+    }));
+  };
+
+  // Color scheme
+  const colors = {
+    primary: '#2563eb',
+    secondary: '#64748b',
+    success: '#16a34a',
+    warning: '#ea580c',
+    danger: '#dc2626',
+    info: '#0891b2'
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 print:bg-white">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-green-600 to-green-700 text-white p-6 print:p-4 print:bg-green-700">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold print:text-2xl">Adams Apples v2</h1>
+              <p className="text-green-100 mt-1">Interactive Database Schema Visualizer</p>
+            </div>
+            <button 
+              onClick={() => window.print()}
+              className="flex items-center gap-2 bg-white text-green-700 px-4 py-2 rounded-lg hover:bg-green-50 transition-colors print:hidden"
+            >
+              <Printer size={20} />
+              Print
+            </button>
+          </div>
+          
+          {/* Stats */}
+          <div className="grid grid-cols-4 gap-4 mt-6 print:hidden">
+            <div className="bg-white/10 backdrop-blur rounded-lg p-3">
+              <div className="text-2xl font-bold">{schema.tables.length}</div>
+              <div className="text-green-100 text-sm">Tables</div>
+            </div>
+            <div className="bg-white/10 backdrop-blur rounded-lg p-3">
+              <div className="text-2xl font-bold">{schema.categories.length}</div>
+              <div className="text-green-100 text-sm">Categories</div>
+            </div>
+            <div className="bg-white/10 backdrop-blur rounded-lg p-3">
+              <div className="text-2xl font-bold">{schema.dataFlows.length}</div>
+              <div className="text-green-100 text-sm">Data Flows</div>
+            </div>
+            <div className="bg-white/10 backdrop-blur rounded-lg p-3">
+              <div className="text-2xl font-bold">27</div>
+              <div className="text-green-100 text-sm">Entities</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Controls */}
+      <div className="bg-white border-b print:hidden">
+        <div className="max-w-7xl mx-auto p-4">
+          <div className="flex gap-4 items-center">
+            {/* View Mode Tabs */}
+            <div className="flex gap-2 bg-gray-100 p-1 rounded-lg">
+              <button
+                onClick={() => setViewMode('erd')}
+                className={`px-4 py-2 rounded ${viewMode === 'erd' ? 'bg-white shadow' : 'text-gray-600'}`}
+              >
+                <Database size={20} className="inline mr-2" />
+                Schema
+              </button>
+              <button
+                onClick={() => setViewMode('flow')}
+                className={`px-4 py-2 rounded ${viewMode === 'flow' ? 'bg-white shadow' : 'text-gray-600'}`}
+              >
+                <GitBranch size={20} className="inline mr-2" />
+                Data Flows
+              </button>
+            </div>
+
+            {/* Search */}
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+              <input
+                type="text"
+                placeholder="Search tables..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+            </div>
+
+            {/* Category Filter */}
+            <select
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+            >
+              <option value="all">All Categories</option>
+              {schema.categories.map(cat => (
+                <option key={cat.id} value={cat.id}>{cat.name}</option>
+              ))}
+            </select>
+
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="px-3 py-2 text-gray-600 hover:text-gray-800"
+              >
+                <X size={20} />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto p-6 print:p-4">
+        {viewMode === 'erd' && (
+          <div className="space-y-8">
+            {/* Categories */}
+            {schema.categories.map(category => {
+              const categoryTables = filteredTables.filter(t => t.category === category.id);
+              if (categoryTables.length === 0) return null;
+
+              const Icon = category.icon;
+
+              return (
+                <div key={category.id} className="bg-white rounded-lg shadow-lg overflow-hidden print:break-inside-avoid print:shadow-none print:border">
+                  {/* Category Header */}
+                  <div 
+                    className="p-4 cursor-pointer print:cursor-default"
+                    style={{ backgroundColor: category.color + '15', borderLeft: `4px solid ${category.color}` }}
+                    onClick={() => toggleSection(category.id)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-lg" style={{ backgroundColor: category.color + '20' }}>
+                          <Icon size={24} style={{ color: category.color }} />
+                        </div>
+                        <div>
+                          <h2 className="text-xl font-bold" style={{ color: category.color }}>
+                            {category.name}
+                          </h2>
+                          <p className="text-sm text-gray-600">{category.description}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4 print:hidden">
+                        <span className="text-sm text-gray-500">{categoryTables.length} tables</span>
+                        {expandedSections[category.id] ? 
+                          <ChevronDown size={20} /> : 
+                          <ChevronRight size={20} />
+                        }
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Tables */}
+                  {(expandedSections[category.id] !== false) && (
+                    <div className="p-4 space-y-4">
+                      {categoryTables.map(table => (
+                        <div 
+                          key={table.id}
+                          className="border rounded-lg overflow-hidden hover:shadow-md transition-shadow print:break-inside-avoid print:mb-4"
+                        >
+                          {/* Table Header */}
+                          <div 
+                            className="p-4 cursor-pointer print:cursor-default"
+                            style={{ backgroundColor: category.color + '08' }}
+                            onClick={() => toggleSection(table.id)}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <Database size={20} style={{ color: category.color }} />
+                                <div>
+                                  <h3 className="text-lg font-bold text-gray-800">
+                                    {table.name}
+                                    <span className="ml-3 text-sm font-normal text-gray-600">
+                                      ({table.businessName})
+                                    </span>
+                                  </h3>
+                                  <p className="text-sm text-gray-600 mt-1">{table.technicalDescription}</p>
+                                </div>
+                              </div>
+                              <div className="print:hidden">
+                                {expandedSections[table.id] ? 
+                                  <ChevronDown size={20} /> : 
+                                  <ChevronRight size={20} />
+                                }
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Table Details */}
+                          {(expandedSections[table.id] !== false) && (
+                            <div className="p-4 space-y-4 bg-gray-50 print:bg-white">
+                              {/* Business Description */}
+                              <div className="bg-blue-50 border-l-4 border-blue-500 p-4 print:bg-white print:border-blue-300">
+                                <h4 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
+                                  <Info size={16} />
+                                  Business Context
+                                </h4>
+                                <p className="text-blue-800 text-sm">{table.businessDescription}</p>
+                              </div>
+
+                              {/* Key Fields */}
+                              <div>
+                                <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                                  <Layers size={16} />
+                                  Key Fields
+                                </h4>
+                                <div className="bg-white rounded border print:border-gray-300">
+                                  <table className="w-full text-sm">
+                                    <thead className="bg-gray-100 print:bg-gray-50">
+                                      <tr>
+                                        <th className="text-left p-2 border-b font-semibold">Field</th>
+                                        <th className="text-left p-2 border-b font-semibold">Type</th>
+                                        <th className="text-left p-2 border-b font-semibold">Description</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {table.keyFields.map((field, idx) => (
+                                        <tr key={idx} className="border-b last:border-b-0 hover:bg-gray-50 print:hover:bg-white">
+                                          <td className="p-2">
+                                            <code className="text-purple-600 font-mono text-xs bg-purple-50 px-2 py-1 rounded print:bg-transparent">
+                                              {field.name}
+                                            </code>
+                                            {field.pk && <span className="ml-2 text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded print:bg-transparent print:border print:border-yellow-300">PK</span>}
+                                            {field.fk && <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded print:bg-transparent print:border print:border-blue-300">FK</span>}
+                                            {field.unique && <span className="ml-2 text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded print:bg-transparent print:border print:border-green-300">UNIQUE</span>}
+                                            {field.required && <span className="ml-2 text-xs bg-red-100 text-red-800 px-2 py-0.5 rounded print:bg-transparent print:border print:border-red-300">REQUIRED</span>}
+                                          </td>
+                                          <td className="p-2">
+                                            <code className="text-xs text-gray-600 font-mono">{field.type}</code>
+                                          </td>
+                                          <td className="p-2 text-gray-700">{field.description}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+
+                              {/* Relationships */}
+                              {table.relationships && table.relationships.length > 0 && (
+                                <div>
+                                  <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                                    <GitBranch size={16} />
+                                    Relationships
+                                  </h4>
+                                  <div className="space-y-2">
+                                    {table.relationships.map((rel, idx) => (
+                                      <div key={idx} className="flex items-center gap-2 text-sm bg-white p-2 rounded border print:border-gray-300">
+                                        <ArrowRight size={16} className="text-gray-400" />
+                                        <span className="font-medium text-gray-700">{rel.type}</span>
+                                        <code className="text-purple-600 font-mono bg-purple-50 px-2 py-0.5 rounded text-xs print:bg-transparent">
+                                          {rel.target}
+                                        </code>
+                                        {rel.as && <span className="text-gray-500">as "{rel.as}"</span>}
+                                        <span className="text-gray-600">- {rel.description}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Business Rules */}
+                              {table.businessRules && table.businessRules.length > 0 && (
+                                <div>
+                                  <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                                    <AlertCircle size={16} />
+                                    Business Rules
+                                  </h4>
+                                  <ul className="space-y-1 text-sm">
+                                    {table.businessRules.map((rule, idx) => (
+                                      <li key={idx} className="flex items-start gap-2 text-gray-700">
+                                        <span className="text-green-600 mt-1">•</span>
+                                        <span>{rule}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+
+                              {/* PostGIS indicator */}
+                              {table.postgis && (
+                                <div className="bg-green-50 border border-green-200 p-3 rounded print:bg-white">
+                                  <div className="flex items-center gap-2 text-green-800 font-semibold">
+                                    <MapPin size={16} />
+                                    PostGIS Spatial Table
+                                  </div>
+                                  <p className="text-sm text-green-700 mt-1">
+                                    This table includes PostGIS geometry columns for spatial data (GPS coordinates, boundaries, etc.)
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {viewMode === 'flow' && (
+          <div className="space-y-8">
+            {schema.dataFlows.map(flow => {
+              const category = getCategoryInfo(flow.category);
+              const Icon = category.icon;
+
+              return (
+                <div key={flow.id} className="bg-white rounded-lg shadow-lg overflow-hidden print:break-inside-avoid print:shadow-none print:border">
+                  {/* Flow Header */}
+                  <div 
+                    className="p-4"
+                    style={{ backgroundColor: category.color + '15', borderLeft: `4px solid ${category.color}` }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg" style={{ backgroundColor: category.color + '20' }}>
+                        <Icon size={24} style={{ color: category.color }} />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-bold" style={{ color: category.color }}>
+                          {flow.name}
+                        </h2>
+                        <p className="text-sm text-gray-600">{flow.description}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Flow Steps */}
+                  <div className="p-6">
+                    <div className="space-y-6">
+                      {flow.steps.map((step, idx) => (
+                        <div key={idx} className="relative print:break-inside-avoid">
+                          {/* Connector Line */}
+                          {idx < flow.steps.length - 1 && (
+                            <div 
+                              className="absolute left-6 top-12 bottom-0 w-0.5 print:hidden"
+                              style={{ backgroundColor: category.color + '40' }}
+                            />
+                          )}
+
+                          <div className="flex gap-4">
+                            {/* Step Number */}
+                            <div 
+                              className="w-12 h-12 rounded-full flex items-center justify-center font-bold text-white shrink-0"
+                              style={{ backgroundColor: category.color }}
+                            >
+                              {idx + 1}
+                            </div>
+
+                            {/* Step Content */}
+                            <div className="flex-1 space-y-3">
+                              <div>
+                                <h3 className="text-lg font-bold text-gray-800">{step.stage}</h3>
+                                <p className="text-sm text-gray-600 mt-1">{step.description}</p>
+                              </div>
+
+                              {/* Tables Involved */}
+                              <div className="flex flex-wrap gap-2">
+                                {step.tables.map(tableName => {
+                                  const table = schema.tables.find(t => t.name === tableName);
+                                  return (
+                                    <code 
+                                      key={tableName}
+                                      className="text-xs font-mono px-2 py-1 rounded print:border"
+                                      style={{ 
+                                        backgroundColor: table ? getCategoryInfo(table.category).color + '15' : '#f1f5f9',
+                                        color: table ? getCategoryInfo(table.category).color : '#64748b'
+                                      }}
+                                    >
+                                      {tableName}
+                                    </code>
+                                  );
+                                })}
+                              </div>
+
+                              {/* Status/Trigger */}
+                              {(step.status || step.trigger || step.condition) && (
+                                <div className="bg-gray-50 border-l-4 border-gray-300 p-3 print:bg-white">
+                                  <div className="text-xs font-semibold text-gray-600 mb-1">
+                                    {step.status && 'Status'}
+                                    {step.trigger && 'Trigger'}
+                                    {step.condition && 'Condition'}
+                                  </div>
+                                  <code className="text-sm font-mono text-gray-700">
+                                    {step.status || step.trigger || step.condition}
+                                  </code>
+                                </div>
+                              )}
+
+                              {/* Business Context */}
+                              <div className="bg-blue-50 border-l-4 border-blue-400 p-3 print:bg-white">
+                                <div className="flex items-start gap-2">
+                                  <Info size={16} className="text-blue-600 mt-0.5 shrink-0" />
+                                  <p className="text-sm text-blue-900">{step.businessContext}</p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Print-specific footer */}
+      <div className="hidden print:block mt-8 pt-4 border-t text-center text-sm text-gray-600">
+        <p>Adams Apples v2 - Database Schema Documentation</p>
+        <p className="text-xs text-gray-500 mt-1">
+          Generated: {new Date().toLocaleDateString()} | 
+          {schema.tables.length} Tables | 
+          {schema.categories.length} Categories | 
+          PostGIS Spatial Support Enabled
+        </p>
+      </div>
+
+      {/* Print Styles */}
+      <style>{`
+        @media print {
+          body {
+            print-color-adjust: exact;
+            -webkit-print-color-adjust: exact;
+          }
+          
+          .print\\:hidden {
+            display: none !important;
+          }
+          
+          .print\\:block {
+            display: block !important;
+          }
+          
+          .print\\:break-inside-avoid {
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+          
+          .print\\:mb-4 {
+            margin-bottom: 1rem !important;
+          }
+          
+          .print\\:p-4 {
+            padding: 1rem !important;
+          }
+          
+          .print\\:bg-white {
+            background-color: white !important;
+          }
+          
+          .print\\:border {
+            border: 1px solid #e5e7eb !important;
+          }
+          
+          .print\\:shadow-none {
+            box-shadow: none !important;
+          }
+          
+          .print\\:text-2xl {
+            font-size: 1.5rem !important;
+          }
+          
+          /* Ensure colors are preserved */
+          .print\\:bg-green-700 {
+            background-color: #15803d !important;
+          }
+          
+          /* Make badges print-friendly */
+          code {
+            background-color: #f9fafb !important;
+            border: 1px solid #e5e7eb !important;
+            padding: 0.125rem 0.5rem !important;
+          }
+          
+          /* Print page breaks */
+          @page {
+            margin: 1cm;
+          }
+        }
+      `}</style>
+    </div>
+  );
+};
+
+export default AdamsApplesSchemaVisualizer;
+
+  </script>
+</body>
+</html>
